@@ -2017,16 +2017,14 @@ PlanBackend::Context::ProcessResponse(
       auto& request = (*requests)[i];
       request->ReportStatistics(
           metric_reporter_.get(), ((*responses)[i] != nullptr),
-          payload->compute_start_ns_,
-          payload->compute_input_end_ns_,
+          payload->compute_start_ns_, payload->compute_input_end_ns_,
           payload->compute_output_start_ns_, compute_end_ns);
 
 #ifdef TRITON_ENABLE_TRACING
       if (request->Trace() != nullptr) {
         auto& trace = request->Trace();
         trace->Report(
-            TRITONSERVER_TRACE_COMPUTE_START,
-            payload->compute_start_ns_);
+            TRITONSERVER_TRACE_COMPUTE_START, payload->compute_start_ns_);
         trace->Report(
             TRITONSERVER_TRACE_COMPUTE_INPUT_END,
             payload->compute_input_end_ns_);
@@ -2042,8 +2040,7 @@ PlanBackend::Context::ProcessResponse(
     payload->inference_backend_->MutableStatsAggregator()
         ->UpdateInferBatchStats(
             metric_reporter_.get(), payload->total_batch_size_,
-            payload->compute_start_ns_,
-            payload->compute_input_end_ns_,
+            payload->compute_start_ns_, payload->compute_input_end_ns_,
             payload->compute_output_start_ns_, compute_end_ns);
 #endif  // TRITON_ENABLE_STATS
 

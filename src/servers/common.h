@@ -31,6 +31,14 @@
 
 namespace nvidia { namespace inferenceserver {
 
+#define RETURN_IF_ERR(X)             \
+  do {                               \
+    TRITONSERVER_Error* err__ = (X); \
+    if (err__ != nullptr) {          \
+      return err__;                  \
+    }                                \
+  } while (false)
+
 #define FAIL(MSG)                                 \
   do {                                            \
     std::cerr << "error: " << (MSG) << std::endl; \
@@ -47,14 +55,6 @@ namespace nvidia { namespace inferenceserver {
       TRITONSERVER_ErrorDelete(err__);                            \
       exit(1);                                                    \
     }                                                             \
-  } while (false)
-
-#define RETURN_IF_ERR(X)             \
-  do {                               \
-    TRITONSERVER_Error* err__ = (X); \
-    if (err__ != nullptr) {          \
-      return err__;                  \
-    }                                \
   } while (false)
 
 #ifdef TRITON_ENABLE_GPU

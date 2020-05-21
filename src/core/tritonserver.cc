@@ -29,10 +29,6 @@
 #include <google/protobuf/util/json_util.h>
 #include <string>
 #include <vector>
-#include "rapidjson/document.h"
-#include "rapidjson/error/en.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/writer.h"
 #include "src/core/backend.h"
 #include "src/core/infer_request.h"
 #include "src/core/infer_response.h"
@@ -46,6 +42,9 @@
 #include "src/core/response_allocator.h"
 #include "src/core/server.h"
 #include "src/core/status.h"
+
+#define TRITONJSON_INTERNAL_STATUS
+#include "src/core/json.h"
 
 namespace ni = nvidia::inferenceserver;
 
@@ -122,25 +121,24 @@ TritonServerError::Create(const ni::Status& status)
 //
 class TritonServerMessage {
  public:
-  TritonServerMessage(const rapidjson::Document& msg);
+  TritonServerMessage(const ni::TritonJson::Document& msg);
   void Serialize(const char** base, size_t* byte_size) const;
 
  private:
-  rapidjson::StringBuffer serialized_;
+  ni::TritonJson::WriteBuffer serialized_;
 };
 
-TritonServerMessage::TritonServerMessage(const rapidjson::Document& msg)
+TritonServerMessage::TritonServerMessage(const ni::TritonJson::Document& msg)
 {
   serialized_.Clear();
-  rapidjson::Writer<rapidjson::StringBuffer> writer(serialized_);
-  msg.Accept(writer);
+  msg.Write(&serialized_);
 }
 
 void
 TritonServerMessage::Serialize(const char** base, size_t* byte_size) const
 {
-  *base = serialized_.GetString();
-  *byte_size = serialized_.GetSize();
+  *base = serialized_.Base();
+  *byte_size = serialized_.Size();
 }
 
 //
@@ -298,13 +296,12 @@ TritonServerOptions::TritonServerOptions()
 #endif  // TRITON_ENABLE_METRICS_GPU
 }
 
-#define SetDurationStats(COUNT, DURATION_NS, ALLOCATOR, DURATION_STAT) \
-  do {                                                                 \
-    DURATION_STAT.SetObject();                                         \
-    DURATION_STAT.AddMember(                                           \
-        "count", rapidjson::Value(COUNT).Move(), ALLOCATOR);           \
-    DURATION_STAT.AddMember(                                           \
-        "ns", rapidjson::Value(DURATION_NS).Move(), ALLOCATOR);        \
+#define SetDurationStat(DOC, PARENT, STAT_NAME, COUNT, NS)               \
+  do {                                                                   \
+    ni::TritonJson::Value dstat(DOC, ni::TritonJson::ValueType::OBJECT); \
+    dstat.Add("count", (COUNT));                                         \
+    dstat.Add("ns", (NS));                                               \
+    PARENT.Add(STAT_NAME, dstat);                                        \
   } while (false)
 
 }  // namespace
@@ -1426,22 +1423,20 @@ TRITONSERVER_ServerMetadata(
 {
   ni::InferenceServer* lserver = reinterpret_cast<ni::InferenceServer*>(server);
 
-  rapidjson::Document metadata;
-  auto& allocator = metadata.GetAllocator();
-  metadata.SetObject();
-  // Just store string reference in JSON object since it will be serialized to
-  // another buffer.
-  metadata.AddMember(
-      "name", rapidjson::StringRef(lserver->Id().c_str()), allocator);
-  metadata.AddMember(
-      "version", rapidjson::StringRef(lserver->Version().c_str()), allocator);
+  ni::TritonJson::Document metadata(ni::TritonJson::ValueType::OBJECT);
 
-  rapidjson::Value extensions(rapidjson::kArrayType);
+  // Just store string reference in JSON object since it will be
+  // serialized to another buffer before lserver->Id() or
+  // lserver->Version() lifetime ends.
+  metadata.AddStringRef("name", lserver->Id().c_str());
+  metadata.AddStringRef("version", lserver->Version().c_str());
+
+  ni::TritonJson::Value extensions(metadata, ni::TritonJson::ValueType::ARRAY);
   const std::vector<const char*>& exts = lserver->Extensions();
   for (const auto ext : exts) {
-    extensions.PushBack(rapidjson::StringRef(ext), allocator);
+    extensions.AppendStringRef(ext);
   }
-  metadata.AddMember("extensions", extensions, allocator);
+  metadata.Add("extensions", extensions);
 
   *server_metadata = reinterpret_cast<TRITONSERVER_Message*>(
       new TritonServerMessage(metadata));
@@ -1463,73 +1458,58 @@ TRITONSERVER_ServerModelMetadata(
   RETURN_IF_STATUS_ERROR(
       lserver->ModelReadyVersions(model_name, &ready_versions));
 
-  rapidjson::Document metadata;
-  auto& allocator = metadata.GetAllocator();
-  metadata.SetObject();
-  // Just store string reference in JSON object since it will be serialized to
-  // another buffer.
-  metadata.AddMember("name", rapidjson::StringRef(model_name), allocator);
+  ni::TritonJson::Document metadata(ni::TritonJson::ValueType::OBJECT);
 
-  rapidjson::Value versions(rapidjson::kArrayType);
+  metadata.Add("name", model_name);
+
+  ni::TritonJson::Value versions(metadata, ni::TritonJson::ValueType::ARRAY);
   if (model_version != -1) {
-    auto version_str = std::to_string(model_version);
-    rapidjson::Value version_val(version_str.c_str(), allocator);
-    versions.PushBack(version_val, allocator);
+    versions.Append(std::to_string(model_version));
   } else {
     for (const auto v : ready_versions) {
-      auto version_str = std::to_string(v);
-      rapidjson::Value version_val(version_str.c_str(), allocator);
-      versions.PushBack(version_val, allocator);
+      versions.Append(std::to_string(v));
     }
   }
-  metadata.AddMember("versions", versions, allocator);
+  metadata.Add("versions", versions);
 
   const auto& model_config = backend->Config();
-  metadata.AddMember(
-      "platform", rapidjson::StringRef(model_config.platform().c_str()),
-      allocator);
+  metadata.Add("platform", model_config.platform().c_str());
 
-  rapidjson::Value inputs(rapidjson::kArrayType);
+  ni::TritonJson::Value inputs(metadata, ni::TritonJson::ValueType::ARRAY);
   for (const auto& io : model_config.input()) {
-    rapidjson::Value io_metadata;
-    io_metadata.SetObject();
-    io_metadata.AddMember(
-        "name", rapidjson::StringRef(io.name().c_str()), allocator);
-    io_metadata.AddMember(
-        "datatype",
-        rapidjson::StringRef(ni::DataTypeToProtocolString(io.data_type())),
-        allocator);
+    ni::TritonJson::Value io_metadata(
+        metadata, ni::TritonJson::ValueType::OBJECT);
+    io_metadata.Add("name", io.name().c_str());
+    io_metadata.Add("datatype", ni::DataTypeToProtocolString(io.data_type()));
 
-    rapidjson::Value io_metadata_shape(rapidjson::kArrayType);
+    ni::TritonJson::Value io_metadata_shape(
+        metadata, ni::TritonJson::ValueType::ARRAY);
     for (const auto d : io.dims()) {
-      io_metadata_shape.PushBack(d, allocator);
+      io_metadata_shape.Append(d);
     }
-    io_metadata.AddMember("shape", io_metadata_shape, allocator);
+    io_metadata.Add("shape", io_metadata_shape);
 
-    inputs.PushBack(io_metadata, allocator);
+    inputs.Append(io_metadata);
   }
-  metadata.AddMember("inputs", inputs, allocator);
+  metadata.Add("inputs", inputs);
 
-  rapidjson::Value outputs(rapidjson::kArrayType);
+  ni::TritonJson::Value outputs(metadata, ni::TritonJson::ValueType::ARRAY);
   for (const auto& io : model_config.output()) {
-    rapidjson::Value io_metadata;
-    io_metadata.SetObject();
-    io_metadata.AddMember(
-        "name", rapidjson::StringRef(io.name().c_str()), allocator);
-    io_metadata.AddMember(
-        "datatype",
-        rapidjson::StringRef(ni::DataTypeToProtocolString(io.data_type())),
-        allocator);
+    ni::TritonJson::Value io_metadata(
+        metadata, ni::TritonJson::ValueType::OBJECT);
+    io_metadata.Add("name", io.name().c_str());
+    io_metadata.Add("datatype", ni::DataTypeToProtocolString(io.data_type()));
 
-    rapidjson::Value io_metadata_shape(rapidjson::kArrayType);
+    ni::TritonJson::Value io_metadata_shape(
+        metadata, ni::TritonJson::ValueType::ARRAY);
     for (const auto d : io.dims()) {
-      io_metadata_shape.PushBack(d, allocator);
+      io_metadata_shape.Append(d);
     }
-    io_metadata.AddMember("shape", io_metadata_shape, allocator);
+    io_metadata.Add("shape", io_metadata_shape);
 
-    outputs.PushBack(io_metadata, allocator);
+    outputs.Append(io_metadata);
   }
-  metadata.AddMember("outputs", outputs, allocator);
+  metadata.Add("outputs", outputs);
 
   *model_metadata = reinterpret_cast<TRITONSERVER_Message*>(
       new TritonServerMessage(metadata));
@@ -1589,12 +1569,10 @@ TRITONSERVER_ServerModelStatistics(
     }
   }
 
+  ni::TritonJson::Document metadata(ni::TritonJson::ValueType::OBJECT);
 
-  rapidjson::Document metadata;
-  auto& allocator = metadata.GetAllocator();
-  metadata.SetObject();
-
-  rapidjson::Value model_stats_json(rapidjson::kArrayType);
+  ni::TritonJson::Value model_stats_json(
+      metadata, ni::TritonJson::ValueType::ARRAY);
   for (const auto& mv_pair : ready_model_versions) {
     for (const auto& version : mv_pair.second) {
       std::shared_ptr<ni::InferenceBackend> backend;
@@ -1605,84 +1583,64 @@ TRITONSERVER_ServerModelStatistics(
       const auto& infer_batch_stats =
           backend->StatsAggregator().ImmutableInferBatchStats();
 
-      rapidjson::Value inference_stats(rapidjson::kObjectType);
-      rapidjson::Value duration_stats;
-      SetDurationStats(
-          infer_stats.success_count_, infer_stats.request_duration_ns_,
-          allocator, duration_stats);
-      inference_stats.AddMember("success", duration_stats, allocator);
-      SetDurationStats(
-          infer_stats.failure_count_, infer_stats.failure_duration_ns_,
-          allocator, duration_stats);
-      inference_stats.AddMember("fail", duration_stats, allocator);
-      SetDurationStats(
-          infer_stats.success_count_, infer_stats.queue_duration_ns_, allocator,
-          duration_stats);
-      inference_stats.AddMember("queue", duration_stats, allocator);
-      SetDurationStats(
-          infer_stats.success_count_, infer_stats.compute_input_duration_ns_,
-          allocator, duration_stats);
-      inference_stats.AddMember("compute_input", duration_stats, allocator);
-      SetDurationStats(
-          infer_stats.success_count_, infer_stats.compute_infer_duration_ns_,
-          allocator, duration_stats);
-      inference_stats.AddMember("compute_infer", duration_stats, allocator);
-      SetDurationStats(
-          infer_stats.success_count_, infer_stats.compute_output_duration_ns_,
-          allocator, duration_stats);
-      inference_stats.AddMember("compute_output", duration_stats, allocator);
+      ni::TritonJson::Value inference_stats(
+          metadata, ni::TritonJson::ValueType::OBJECT);
+      SetDurationStat(
+          metadata, inference_stats, "success", infer_stats.success_count_,
+          infer_stats.request_duration_ns_);
+      SetDurationStat(
+          metadata, inference_stats, "fail", infer_stats.failure_count_,
+          infer_stats.failure_duration_ns_);
+      SetDurationStat(
+          metadata, inference_stats, "queue", infer_stats.success_count_,
+          infer_stats.queue_duration_ns_);
+      SetDurationStat(
+          metadata, inference_stats, "compute_input",
+          infer_stats.success_count_, infer_stats.compute_input_duration_ns_);
+      SetDurationStat(
+          metadata, inference_stats, "compute_infer",
+          infer_stats.success_count_, infer_stats.compute_infer_duration_ns_);
+      SetDurationStat(
+          metadata, inference_stats, "compute_output",
+          infer_stats.success_count_, infer_stats.compute_output_duration_ns_);
 
-      rapidjson::Value batch_stats(rapidjson::kArrayType);
+      ni::TritonJson::Value batch_stats(
+          metadata, ni::TritonJson::ValueType::ARRAY);
       for (const auto& batch : infer_batch_stats) {
-        rapidjson::Value batch_stat(rapidjson::kObjectType);
-        rapidjson::Value duration_stats;
-
-        batch_stat.AddMember(
-            "batch_size", rapidjson::Value(batch.first).Move(), allocator);
-        SetDurationStats(
-            batch.second.count_, batch.second.compute_input_duration_ns_,
-            allocator, duration_stats);
-        batch_stat.AddMember("compute_input", duration_stats, allocator);
-        SetDurationStats(
-            batch.second.count_, batch.second.compute_infer_duration_ns_,
-            allocator, duration_stats);
-        batch_stat.AddMember("compute_infer", duration_stats, allocator);
-        SetDurationStats(
-            batch.second.count_, batch.second.compute_output_duration_ns_,
-            allocator, duration_stats);
-        batch_stat.AddMember("compute_output", duration_stats, allocator);
-        batch_stats.PushBack(batch_stat, allocator);
+        ni::TritonJson::Value batch_stat(
+            metadata, ni::TritonJson::ValueType::OBJECT);
+        batch_stat.Add("batch_size", batch.first);
+        SetDurationStat(
+            metadata, batch_stat, "compute_input", batch.second.count_,
+            batch.second.compute_input_duration_ns_);
+        SetDurationStat(
+            metadata, batch_stat, "compute_infer", batch.second.count_,
+            batch.second.compute_infer_duration_ns_);
+        SetDurationStat(
+            metadata, batch_stat, "compute_output", batch.second.count_,
+            batch.second.compute_output_duration_ns_);
+        batch_stats.Append(batch_stat);
       }
 
-      rapidjson::Value model_stat(rapidjson::kObjectType);
-      auto version_str = std::to_string(version);
-      model_stat.AddMember(
-          "name", rapidjson::Value(mv_pair.first.c_str(), allocator).Move(),
-          allocator);
-      model_stat.AddMember(
-          "version", rapidjson::Value(version_str.c_str(), allocator).Move(),
-          allocator);
+      ni::TritonJson::Value model_stat(
+          metadata, ni::TritonJson::ValueType::OBJECT);
+      model_stat.Add("name", mv_pair.first);
+      model_stat.Add("version", std::to_string(version));
 
-      model_stat.AddMember(
-          "last_inference",
-          rapidjson::Value(backend->StatsAggregator().LastInferenceMs()).Move(),
-          allocator);
-      model_stat.AddMember(
-          "inference_count",
-          rapidjson::Value(backend->StatsAggregator().InferenceCount()).Move(),
-          allocator);
-      model_stat.AddMember(
-          "execution_count",
-          rapidjson::Value(backend->StatsAggregator().ExecutionCount()).Move(),
-          allocator);
+      model_stat.Add(
+          "last_inference", backend->StatsAggregator().LastInferenceMs());
+      model_stat.Add(
+          "inference_count", backend->StatsAggregator().InferenceCount());
+      model_stat.Add(
+          "execution_count", backend->StatsAggregator().ExecutionCount());
 
-      model_stat.AddMember("inference_stats", inference_stats, allocator);
-      model_stat.AddMember("batch_stats", batch_stats, allocator);
-      model_stats_json.PushBack(model_stat, allocator);
+      model_stat.Add("inference_stats", inference_stats);
+      model_stat.Add("batch_stats", batch_stats);
+      model_stats_json.Append(model_stat);
     }
   }
 
-  metadata.AddMember("model_stats", model_stats_json, allocator);
+  metadata.Add("model_stats", model_stats_json);
   *model_stats = reinterpret_cast<TRITONSERVER_Message*>(
       new TritonServerMessage(metadata));
 
@@ -1708,18 +1666,9 @@ TRITONSERVER_ServerModelConfig(
   ::google::protobuf::util::MessageToJsonString(
       backend->Config(), &model_config_json, options);
 
-  // Extra copies.. But this simplify TritonServerMessage class
-  rapidjson::Document document;
-  document.Parse(model_config_json.data(), model_config_json.size());
-  if (document.HasParseError()) {
-    return TRITONSERVER_ErrorNew(
-        TRITONSERVER_ERROR_INVALID_ARG,
-        std::string(
-            "failed to parse the request JSON buffer: " +
-            std::string(GetParseError_En(document.GetParseError())) + " at " +
-            std::to_string(document.GetErrorOffset()))
-            .c_str());
-  }
+  // Extra copies.. But this simplifies TritonServerMessage class
+  ni::TritonJson::Document document;
+  RETURN_IF_STATUS_ERROR(document.Parse(model_config_json));
 
   *model_config = reinterpret_cast<TRITONSERVER_Message*>(
       new TritonServerMessage(document));
@@ -1738,31 +1687,25 @@ TRITONSERVER_ServerModelIndex(
   std::vector<ni::ModelRepositoryManager::ModelIndex> index;
   RETURN_IF_STATUS_ERROR(lserver->RepositoryIndex(ready_only, &index));
 
-  rapidjson::Document repository_index_json(rapidjson::kArrayType);
-  auto& allocator = repository_index_json.GetAllocator();
+  ni::TritonJson::Document repository_index_json(
+      ni::TritonJson::ValueType::ARRAY);
 
   for (const auto& in : index) {
-    rapidjson::Value model_index;
-    model_index.SetObject();
-    model_index.AddMember(
-        "name", rapidjson::StringRef(in.name_.c_str()), allocator);
+    ni::TritonJson::Value model_index(
+        repository_index_json, ni::TritonJson::ValueType::OBJECT);
+    model_index.Add("name", in.name_);
     if (!in.name_only_) {
       if (in.version_ >= 0) {
-        rapidjson::Value vstr;
-        vstr.SetString(std::to_string(in.version_).c_str(), allocator);
-        model_index.AddMember("version", vstr, allocator);
+        model_index.Add("version", std::to_string(in.version_));
       }
-      model_index.AddMember(
-          "state",
-          rapidjson::StringRef(ni::ModelReadyStateString(in.state_).c_str()),
-          allocator);
+      model_index.AddStringRef(
+          "state", ni::ModelReadyStateString(in.state_).c_str());
       if (!in.reason_.empty()) {
-        model_index.AddMember(
-            "reason", rapidjson::StringRef(in.reason_.c_str()), allocator);
+        model_index.Add("reason", in.reason_);
       }
     }
 
-    repository_index_json.PushBack(model_index, allocator);
+    repository_index_json.Append(model_index);
   }
 
   *repository_index = reinterpret_cast<TRITONSERVER_Message*>(
