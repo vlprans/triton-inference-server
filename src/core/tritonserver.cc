@@ -122,23 +122,38 @@ TritonServerError::Create(const ni::Status& status)
 class TritonServerMessage {
  public:
   TritonServerMessage(const ni::TritonJson::Document& msg);
+  TritonServerMessage(std::string&& msg);
+
   void Serialize(const char** base, size_t* byte_size) const;
 
  private:
-  ni::TritonJson::WriteBuffer serialized_;
+  ni::TritonJson::WriteBuffer json_buffer_;
+  std::string str_buffer_;
+
+  const char* base_;
+  size_t byte_size_;
 };
 
 TritonServerMessage::TritonServerMessage(const ni::TritonJson::Document& msg)
 {
-  serialized_.Clear();
-  msg.Write(&serialized_);
+  json_buffer_.Clear();
+  msg.Write(&json_buffer_);
+  base_ = json_buffer_.Base();
+  byte_size_ = json_buffer_.Size();
+}
+
+TritonServerMessage::TritonServerMessage(std::string&& msg)
+{
+  str_buffer_ = std::move(msg);
+  base_ = str_buffer_.data();
+  byte_size_ = str_buffer_.size();
 }
 
 void
 TritonServerMessage::Serialize(const char** base, size_t* byte_size) const
 {
-  *base = serialized_.Base();
-  *byte_size = serialized_.Size();
+  *base = base_;
+  *byte_size = byte_size_;
 }
 
 //
@@ -1666,12 +1681,8 @@ TRITONSERVER_ServerModelConfig(
   ::google::protobuf::util::MessageToJsonString(
       backend->Config(), &model_config_json, options);
 
-  // Extra copies.. But this simplifies TritonServerMessage class
-  ni::TritonJson::Document document;
-  RETURN_IF_STATUS_ERROR(document.Parse(model_config_json));
-
   *model_config = reinterpret_cast<TRITONSERVER_Message*>(
-      new TritonServerMessage(document));
+      new TritonServerMessage(std::move(model_config_json)));
   return nullptr;  // success
 }
 

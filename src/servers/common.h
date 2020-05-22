@@ -39,6 +39,14 @@ namespace nvidia { namespace inferenceserver {
     }                                \
   } while (false)
 
+#define GOTO_IF_ERR(X, T)            \
+  do {                               \
+    TRITONSERVER_Error* err__ = (X); \
+    if (err__ != nullptr) {          \
+      goto T;                        \
+    }                                \
+  } while (false)
+
 #define FAIL(MSG)                                 \
   do {                                            \
     std::cerr << "error: " << (MSG) << std::endl; \
