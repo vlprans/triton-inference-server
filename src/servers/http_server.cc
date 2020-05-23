@@ -34,16 +34,14 @@
 #include <algorithm>
 #include <list>
 #include <thread>
-#include "rapidjson/document.h"
-#include "rapidjson/error/en.h"
-#include "rapidjson/rapidjson.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/writer.h"
 #include "src/core/constants.h"
 #include "src/core/logging.h"
 #include "src/core/model_config.h"
 #include "src/servers/classification.h"
 #include "src/servers/common.h"
+
+#define TRITONJSON_TRITONSERVER_STATUS
+#include "src/core/json.h"
 
 #ifdef TRITON_ENABLE_GPU
 extern "C" {
@@ -259,104 +257,144 @@ AllocEVBuffer(const size_t byte_size, evbuffer** evb, void** base)
   return nullptr;  // success
 }
 
-void
-JsonStringDataByteSize(const rapidjson::Value& tensor_data, size_t* byte_size)
+TRITONSERVER_Error*
+JsonBytesArrayByteSize(
+    const TritonJson::ValueRef& tensor_data, size_t* byte_size)
 {
-  for (size_t i = 0; i < tensor_data.Size(); i++) {
+  for (size_t i = 0; i < tensor_data.ArraySize(); i++) {
+    TritonJson::ValueRef el;
+    RETURN_IF_ERR(tensor_data.Member(i, &el));
+
     // Recurse if not last dimension...
-    if (tensor_data[i].IsArray()) {
-      JsonStringDataByteSize(tensor_data[i], byte_size);
+    if (el.AssertType(TritonJson::ValueType::ARRAY) == nullptr) {
+      RETURN_IF_ERR(JsonBytesArrayByteSize(el, byte_size));
     } else {
       // Serialized data size is the length of the string itself plus
       // 4 bytes to record the string length.
-      uint32_t len = tensor_data[i].GetStringLength();
+      const char* str;
+      size_t len;
+      RETURN_IF_ERR(el.AsString(&str, &len));
       *byte_size += len + sizeof(uint32_t);
     }
   }
+
+  return nullptr;  // success
 }
 
-void
+TRITONSERVER_Error*
 ReadDataFromJsonHelper(
     char* base, const TRITONSERVER_DataType dtype,
-    const rapidjson::Value& tensor_data, int* counter)
+    const TritonJson::ValueRef& tensor_data, int* counter)
 {
   // FIXME should invert loop and switch so don't have to do a switch
   // each iteration.
-  for (size_t i = 0; i < tensor_data.Size(); i++) {
+  for (size_t i = 0; i < tensor_data.ArraySize(); i++) {
+    TritonJson::ValueRef el;
+    RETURN_IF_ERR(tensor_data.Member(i, &el));
+
     // Recurse if not last dimension...
-    if (tensor_data[i].IsArray()) {
-      ReadDataFromJsonHelper(base, dtype, tensor_data[i], counter);
+    if (el.AssertType(TritonJson::ValueType::ARRAY) == nullptr) {
+      RETURN_IF_ERR(ReadDataFromJsonHelper(base, dtype, el, counter));
     } else {
       switch (dtype) {
         case TRITONSERVER_TYPE_BOOL: {
+          bool b;
+          RETURN_IF_ERR(el.AsBool(&b));
           uint8_t* data_vec = reinterpret_cast<uint8_t*>(base);
-          data_vec[*counter] = (uint8_t)tensor_data[i].GetBool();
+          // FIXME for unsigned should bounds check and raise error
+          // since otherwise the actually used value will be
+          // unexpected.
+          data_vec[*counter] = (uint8_t)(b ? 1 : 0);
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_UINT8: {
+          uint64_t ui;
+          RETURN_IF_ERR(el.AsUInt(&ui));
           uint8_t* data_vec = reinterpret_cast<uint8_t*>(base);
-          data_vec[*counter] = (uint8_t)tensor_data[i].GetUint();
+          data_vec[*counter] = (uint8_t)ui;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_UINT16: {
+          uint64_t ui;
+          RETURN_IF_ERR(el.AsUInt(&ui));
           uint16_t* data_vec = reinterpret_cast<uint16_t*>(base);
-          data_vec[*counter] = (uint16_t)tensor_data[i].GetUint();
+          data_vec[*counter] = (uint16_t)ui;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_UINT32: {
+          uint64_t ui;
+          RETURN_IF_ERR(el.AsUInt(&ui));
           uint32_t* data_vec = reinterpret_cast<uint32_t*>(base);
-          data_vec[*counter] = (uint32_t)tensor_data[i].GetUint();
+          data_vec[*counter] = (uint32_t)ui;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_UINT64: {
+          uint64_t ui;
+          RETURN_IF_ERR(el.AsUInt(&ui));
           uint64_t* data_vec = reinterpret_cast<uint64_t*>(base);
-          data_vec[*counter] = (uint64_t)tensor_data[i].GetUint64();
+          data_vec[*counter] = ui;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_INT8: {
+          // FIXME for signed type just assigning to smaller type is
+          // "implementation defined" and so really need to bounds
+          // check.
+          int64_t si;
+          RETURN_IF_ERR(el.AsInt(&si));
           int8_t* data_vec = reinterpret_cast<int8_t*>(base);
-          data_vec[*counter] = (int8_t)tensor_data[i].GetInt();
+          data_vec[*counter] = (int8_t)si;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_INT16: {
+          int64_t si;
+          RETURN_IF_ERR(el.AsInt(&si));
           int16_t* data_vec = reinterpret_cast<int16_t*>(base);
-          data_vec[*counter] = (int16_t)tensor_data[i].GetInt();
+          data_vec[*counter] = (int16_t)si;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_INT32: {
+          int64_t si;
+          RETURN_IF_ERR(el.AsInt(&si));
           int32_t* data_vec = reinterpret_cast<int32_t*>(base);
-          data_vec[*counter] = (int32_t)tensor_data[i].GetInt();
+          data_vec[*counter] = (int32_t)si;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_INT64: {
+          int64_t si;
+          RETURN_IF_ERR(el.AsInt(&si));
           int64_t* data_vec = reinterpret_cast<int64_t*>(base);
-          data_vec[*counter] = (int64_t)tensor_data[i].GetInt64();
+          data_vec[*counter] = si;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_FP32: {
+          float fp32;
+          RETURN_IF_ERR(el.AsFloat(&fp32));
           float* data_vec = reinterpret_cast<float*>(base);
-          data_vec[*counter] = (float)tensor_data[i].GetFloat();
+          data_vec[*counter] = fp32;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_FP64: {
+          double fp64;
+          RETURN_IF_ERR(el.AsDouble(&fp64));
           double* data_vec = reinterpret_cast<double*>(base);
-          data_vec[*counter] = (double)tensor_data[i].GetDouble();
+          data_vec[*counter] = fp64;
           *counter += 1;
           break;
         }
         case TRITONSERVER_TYPE_BYTES: {
-          const char* cstr = tensor_data[i].GetString();
-          uint32_t len = tensor_data[i].GetStringLength();
+          const char* cstr;
+          size_t len;
+          RETURN_IF_ERR(el.AsString(&cstr, &len));
           memcpy(
               base + *counter, reinterpret_cast<char*>(&len), sizeof(uint32_t));
           std::copy(cstr, cstr + len, base + *counter + sizeof(uint32_t));
@@ -368,12 +406,14 @@ ReadDataFromJsonHelper(
       }
     }
   }
+
+  return nullptr;  // success
 }
 
 TRITONSERVER_Error*
 ReadDataFromJson(
-    const char* tensor_name, const rapidjson::Value& tensor_data, char* base,
-    const TRITONSERVER_DataType dtype)
+    const char* tensor_name, const TritonJson::ValueRef& tensor_data,
+    char* base, const TRITONSERVER_DataType dtype)
 {
   int counter = 0;
   switch (dtype) {
@@ -394,7 +434,7 @@ ReadDataFromJson(
               .c_str());
 
     default:
-      ReadDataFromJsonHelper(base, dtype, tensor_data, &counter);
+      RETURN_IF_ERR(ReadDataFromJsonHelper(base, dtype, tensor_data, &counter));
       break;
   }
 
@@ -1913,7 +1953,6 @@ HTTPAPIServer::EVBufferToInput(
     size_t byte_size = 0;
     const bool binary_input = CheckBinaryInputData(request_input, &byte_size);
 
-    // FIXME why would byte_size be 0 for binary input?
     if ((byte_size == 0) && binary_input) {
       RETURN_IF_ERR(TRITONSERVER_InferenceRequestAppendInputData(
           irequest, input_name, nullptr, 0 /* byte_size */,
@@ -1980,14 +2019,16 @@ HTTPAPIServer::EVBufferToInput(
               irequest, input_name, nullptr, 0 /* byte_size */,
               TRITONSERVER_MEMORY_CPU, 0 /* memory_type_id */));
         } else {
-          const rapidjson::Value& tensor_data =
-              request_input.FindMember("data")->value;
+          // JSON... presence of "data" already validated but still
+          // checking here. Flow in this endpoing needs to be
+          // reworked...
+          const TritonJson::ValueRef tensor_data;
+          RETURN_IF_ERR(request_input.MemberAsArray("data", &tensor_data));
 
-          size_t dtype_size = TRITONSERVER_DataTypeByteSize(dtype);
-          if (dtype_size == 0) {
-            JsonStringDataByteSize(tensor_data, &byte_size);
+          if (dtype == TRITONSERVER_TYPE_BYTES) {
+            RETURN_IF_ERR(JsonBytesArrayByteSize(tensor_data, &byte_size));
           } else {
-            byte_size = element_cnt * dtype_size;
+            byte_size = element_cnt * TRITONSERVER_DataTypeByteSize(dtype);
           }
 
           infer_req->serialized_data_.emplace_back();

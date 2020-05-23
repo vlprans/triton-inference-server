@@ -832,15 +832,18 @@ CommonHandler::SetUpAllRequests()
       GOTO_IF_ERR(err, earlyexit);
 
       const char* name;
-      err = server_metadata_json.MemberAsString("name", &name);
+      size_t namelen;
+      err = server_metadata_json.MemberAsString("name", &name, &namelen);
       GOTO_IF_ERR(err, earlyexit);
 
       const char* version;
-      err = server_metadata_json.MemberAsString("version", &version);
+      size_t versionlen;
+      err =
+          server_metadata_json.MemberAsString("version", &version, &versionlen);
       GOTO_IF_ERR(err, earlyexit);
 
-      response->set_name(name);
-      response->set_version(version);
+      response->set_name(std::string(name, namelen));
+      response->set_version(std::string(version, versionlen));
 
       if (server_metadata_json.HasMember("extensions")) {
         TritonJson::ValueRef extensions_json;
@@ -850,9 +853,10 @@ CommonHandler::SetUpAllRequests()
 
         for (size_t idx = 0; idx < extensions_json.ArraySize(); ++idx) {
           const char* ext;
-          err = extensions_json.MemberAsString(idx, &ext);
+          size_t extlen;
+          err = extensions_json.MemberAsString(idx, &ext, &extlen);
           GOTO_IF_ERR(err, earlyexit);
-          response->add_extensions(ext);
+          response->add_extensions(std::string(ext, extlen));
         }
       }
       TRITONSERVER_MessageDelete(server_metadata_message);
@@ -907,10 +911,11 @@ CommonHandler::SetUpAllRequests()
       GOTO_IF_ERR(err, earlyexit);
 
       const char* name;
-      err = model_metadata_json.MemberAsString("name", &name);
+      size_t namelen;
+      err = model_metadata_json.MemberAsString("name", &name, &namelen);
       GOTO_IF_ERR(err, earlyexit);
 
-      response->set_name(name);
+      response->set_name(std::string(name, namelen));
 
       if (model_metadata_json.HasMember("versions")) {
         TritonJson::ValueRef versions_json;
@@ -919,16 +924,19 @@ CommonHandler::SetUpAllRequests()
 
         for (size_t idx = 0; idx < versions_json.ArraySize(); ++idx) {
           const char* version;
-          err = versions_json.MemberAsString(idx, &version);
+          size_t versionlen;
+          err = versions_json.MemberAsString(idx, &version, &versionlen);
           GOTO_IF_ERR(err, earlyexit);
-          response->add_versions(version);
+          response->add_versions(std::string(version, versionlen));
         }
       }
 
       const char* platform;
-      err = model_metadata_json.MemberAsString("platform", &platform);
+      size_t platformlen;
+      err = model_metadata_json.MemberAsString(
+          "platform", &platform, &platformlen);
       GOTO_IF_ERR(err, earlyexit);
-      response->set_platform(platform);
+      response->set_platform(std::string(platform, platformlen));
 
       if (model_metadata_json.HasMember("inputs")) {
         TritonJson::ValueRef inputs_json;
@@ -943,15 +951,17 @@ CommonHandler::SetUpAllRequests()
           ModelMetadataResponse::TensorMetadata* io = response->add_inputs();
 
           const char* name;
-          err = io_json.MemberAsString("name", &name);
+          size_t namelen;
+          err = io_json.MemberAsString("name", &name, &namelen);
           GOTO_IF_ERR(err, earlyexit);
 
           const char* datatype;
-          err = io_json.MemberAsString("datatype", &datatype);
+          size_t datatypelen;
+          err = io_json.MemberAsString("datatype", &datatype, &datatypelen);
           GOTO_IF_ERR(err, earlyexit);
 
-          io->set_name(name);
-          io->set_datatype(datatype);
+          io->set_name(std::string(name, namelen));
+          io->set_datatype(std::string(datatype, datatypelen));
 
           if (io_json.HasMember("shape")) {
             TritonJson::ValueRef shape_json;
@@ -982,15 +992,17 @@ CommonHandler::SetUpAllRequests()
           ModelMetadataResponse::TensorMetadata* io = response->add_outputs();
 
           const char* name;
-          err = io_json.MemberAsString("name", &name);
+          size_t namelen;
+          err = io_json.MemberAsString("name", &name, &namelen);
           GOTO_IF_ERR(err, earlyexit);
 
           const char* datatype;
-          err = io_json.MemberAsString("datatype", &datatype);
+          size_t datatypelen;
+          err = io_json.MemberAsString("datatype", &datatype, &datatypelen);
           GOTO_IF_ERR(err, earlyexit);
 
-          io->set_name(name);
-          io->set_datatype(datatype);
+          io->set_name(std::string(name, namelen));
+          io->set_datatype(std::string(datatype, datatypelen));
 
           if (io_json.HasMember("shape")) {
             TritonJson::ValueRef shape_json;
@@ -1127,15 +1139,17 @@ CommonHandler::SetUpAllRequests()
         GOTO_IF_ERR(err, earlyexit);
 
         const char* name;
-        err = infer_stats_json.MemberAsString("name", &name);
+        size_t namelen;
+        err = infer_stats_json.MemberAsString("name", &name, &namelen);
         GOTO_IF_ERR(err, earlyexit);
 
         const char* version;
-        err = infer_stats_json.MemberAsString("version", &version);
+        size_t versionlen;
+        err = infer_stats_json.MemberAsString("version", &version, &versionlen);
         GOTO_IF_ERR(err, earlyexit);
 
-        statistics->set_name(name);
-        statistics->set_version(version);
+        statistics->set_name(std::string(name, namelen));
+        statistics->set_version(std::string(version, versionlen));
 
         uint64_t ucnt;
         err = infer_stats_json.MemberAsUInt("last_inference", &ucnt);
@@ -1584,27 +1598,31 @@ CommonHandler::SetUpAllRequests()
         auto model_index = response->add_models();
 
         const char* name;
-        err = index_json.MemberAsString("name", &name);
+        size_t namelen;
+        err = index_json.MemberAsString("name", &name, &namelen);
         GOTO_IF_ERR(err, earlyexit);
-        model_index->set_name(name);
+        model_index->set_name(std::string(name, namelen));
 
         if (index_json.HasMember("version")) {
           const char* version;
-          err = index_json.MemberAsString("version", &version);
+          size_t versionlen;
+          err = index_json.MemberAsString("version", &version, &versionlen);
           GOTO_IF_ERR(err, earlyexit);
-          model_index->set_version(version);
+          model_index->set_version(std::string(version, versionlen));
         }
         if (index_json.HasMember("state")) {
           const char* state;
-          err = index_json.MemberAsString("state", &state);
+          size_t statelen;
+          err = index_json.MemberAsString("state", &state, &statelen);
           GOTO_IF_ERR(err, earlyexit);
-          model_index->set_state(state);
+          model_index->set_state(std::string(state, statelen));
         }
         if (index_json.HasMember("reason")) {
           const char* reason;
-          err = index_json.MemberAsString("reason", &reason);
+          size_t reasonlen;
+          err = index_json.MemberAsString("reason", &reason, &reasonlen);
           GOTO_IF_ERR(err, earlyexit);
-          model_index->set_reason(reason);
+          model_index->set_reason(std::string(reason, reasonlen));
         }
       }
 

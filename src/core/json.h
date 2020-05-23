@@ -68,10 +68,12 @@ namespace nvidia { namespace inferenceserver {
      lifetime of 'name' extends at least as long as the object. */             \
   TRITONJSON_STATUSTYPE Add(const char* name, const std::string& value);       \
                                                                                \
-  /* Add a copy of a string to an object. It is assumed that 'name' can be     \
-     used by reference, it is the caller's responsibility to make sure the     \
-     lifetime of 'name' extends at least as long as the object. */             \
-  TRITONJSON_STATUSTYPE Add(const char* name, const char* value);              \
+  /* Add a copy of a string to an object. It is assumed that 'name' is         \
+     null-terminated and can be used by reference, it is the caller's          \
+     responsibility to make sure the lifetime of 'name' extends at least as    \
+     long as the object. */                                                    \
+  TRITONJSON_STATUSTYPE Add(                                                   \
+      const char* name, const char* value, const size_t len);                  \
                                                                                \
   /* Add a signed int to an object. It is assumed that 'name' can be           \
      used by reference, it is the caller's responsibility to make sure the     \
@@ -83,10 +85,10 @@ namespace nvidia { namespace inferenceserver {
      lifetime of 'name' extends at least as long as the object. */             \
   TRITONJSON_STATUSTYPE Add(const char* name, const uint64_t value);           \
                                                                                \
-  /* Add a string value to an object. It is assumed that 'name' and 'value'    \
-     can be used by reference, it is the caller's responsibility to make sure  \
-     the lifetime of 'name' and 'value' extends at least as long as the        \
-     object. */                                                                \
+  /* Add a null-terminated string value to an object. It is assumed that       \
+     'name' and 'value' can be used by reference, it is the caller's           \
+     responsibility to make sure the lifetime of 'name' and 'value' extends at \
+     least as long as the object. */                                           \
   TRITONJSON_STATUSTYPE AddStringRef(const char* name, const char* value);     \
                                                                                \
   /* Append a value to an array. */                                            \
@@ -96,7 +98,7 @@ namespace nvidia { namespace inferenceserver {
   TRITONJSON_STATUSTYPE Append(const std::string& value);                      \
                                                                                \
   /* Append a copy of a string to an array. */                                 \
-  TRITONJSON_STATUSTYPE Append(const char* value);                             \
+  TRITONJSON_STATUSTYPE Append(const char* value, const size_t len);           \
                                                                                \
   /* Append a signed int to an array. */                                       \
   TRITONJSON_STATUSTYPE Append(const int64_t value);                           \
@@ -104,84 +106,105 @@ namespace nvidia { namespace inferenceserver {
   /* Append an unsigned int to an array. */                                    \
   TRITONJSON_STATUSTYPE Append(const uint64_t value);                          \
                                                                                \
-  /* Append a string value to an array. It is assumed that 'value' can be used \
-     by reference, it is the caller's responsibility to make sure the          \
+  /* Append a null-terminated string value to an array. It is assumed that     \
+     'value' can be used by reference, it is the caller's responsibility to    \
+     make sure the                                                             \
      lifetime of 'value' extends at least as long as the object. */            \
   TRITONJSON_STATUSTYPE AppendStringRef(const char* value);
 
 #define TRITONJSON_DECL_COMMON_REF_METHODS                                     \
   /* Check if this value is of the specified type. Return appropriate error if \
    * not.  */                                                                  \
-  TRITONJSON_STATUSTYPE AssertType(TritonJson::ValueType type);                \
+  TRITONJSON_STATUSTYPE AssertType(TritonJson::ValueType type) const;          \
                                                                                \
   /* Return true if an object contains a named member. */                      \
-  bool HasMember(const char* name);                                            \
+  bool HasMember(const char* name) const;                                      \
                                                                                \
   /* Get the size of an array. If called on a non-array value returns 0. */    \
-  size_t ArraySize();                                                          \
+  size_t ArraySize() const;                                                    \
                                                                                \
-  /* Get the referenced value as a string. Error if value is not a string. */  \
-  TRITONJSON_STATUSTYPE AsString(const char** value);                          \
+  /* Get the referenced value as a string. The string may contain null or      \
+   * other special characters and so 'len' must be used to determine length.   \
+   * Error if value is not a string. */                                        \
+  TRITONJSON_STATUSTYPE AsString(const char** value, size_t* len) const;       \
+                                                                               \
+  /* Get the referenced value as a boolean. Error if value is not a            \
+   * boolean. */                                                               \
+  TRITONJSON_STATUSTYPE AsBool(bool* value) const;                             \
                                                                                \
   /* Get the referenced value as a signed integer. Error if value is not a     \
    * signed integer. */                                                        \
-  TRITONJSON_STATUSTYPE AsInt(int64_t* value);                                 \
+  TRITONJSON_STATUSTYPE AsInt(int64_t* value) const;                           \
                                                                                \
   /* Get the referenced value as an unsigned integer. Error if value is not an \
    * unsigned integer. */                                                      \
-  TRITONJSON_STATUSTYPE AsUInt(uint64_t* value);                               \
+  TRITONJSON_STATUSTYPE AsUInt(uint64_t* value) const;                         \
                                                                                \
   /* Get a named member from an object. Error if the named member does not     \
    * exist.  */                                                                \
-  TRITONJSON_STATUSTYPE Member(const char* name, TritonJson::ValueRef* value); \
+  TRITONJSON_STATUSTYPE Member(const char* name, TritonJson::ValueRef* value)  \
+      const;                                                                   \
                                                                                \
   /* Get an indexed member from an array. Error if the index does not exist.   \
    */                                                                          \
-  TRITONJSON_STATUSTYPE Member(const size_t idx, TritonJson::ValueRef* value); \
+  TRITONJSON_STATUSTYPE Member(const size_t idx, TritonJson::ValueRef* value)  \
+      const;                                                                   \
                                                                                \
   /* Get a named array member from an object. Error if the named member does   \
    * not exist or is not an array.  */                                         \
   TRITONJSON_STATUSTYPE MemberAsArray(                                         \
-      const char* name, TritonJson::ValueRef* value);                          \
+      const char* name, TritonJson::ValueRef* value) const;                    \
                                                                                \
   /* Get an indexed array member from an array. Error if the index does not    \
    * exist or is not an array.  */                                             \
   TRITONJSON_STATUSTYPE MemberAsArray(                                         \
-      const size_t idx, TritonJson::ValueRef* value);                          \
+      const size_t idx, TritonJson::ValueRef* value) const;                    \
                                                                                \
   /* Get a named object member from an object. Error if the named member does  \
    * not exist or is not an object.  */                                        \
   TRITONJSON_STATUSTYPE MemberAsObject(                                        \
-      const char* name, TritonJson::ValueRef* value);                          \
+      const char* name, TritonJson::ValueRef* value) const;                    \
                                                                                \
   /* Get an indexed object member from an array. Error if the index does not   \
    * exist or is not an object.  */                                            \
   TRITONJSON_STATUSTYPE MemberAsObject(                                        \
-      const size_t idx, TritonJson::ValueRef* value);                          \
+      const size_t idx, TritonJson::ValueRef* value) const;                    \
                                                                                \
-  /* Get a named member from an object as a string. Error if the named member  \
-   * does not exist or is not a string.  */                                    \
-  TRITONJSON_STATUSTYPE MemberAsString(const char* name, const char** value);  \
+  /* Get a named member from an object as a string. The string may contain     \
+   * null or other special characters and so 'len' must be used to determine   \
+   * length. Error if the named member does not exist or is not a string.  */  \
+  TRITONJSON_STATUSTYPE MemberAsString(                                        \
+      const char* name, const char** value, size_t* len) const;                \
                                                                                \
-  /* Get an indexed member from an array as a string. Error if the index does  \
-   * not exist or is not a string.   */                                        \
-  TRITONJSON_STATUSTYPE MemberAsString(const size_t idx, const char** value);  \
+  /* Get an indexed member from an array as a string. The string may contain   \
+   * null or other special characters and so 'len' must be used to determine   \
+   * length. Error if the index does not exist or is not a string.   */        \
+  TRITONJSON_STATUSTYPE MemberAsString(                                        \
+      const size_t idx, const char** value, size_t* len) const;                \
+                                                                               \
+  /* Get a named member from an object as a boolean. Error if the named        \
+   * member does not exist or is not a boolean.  */                            \
+  TRITONJSON_STATUSTYPE MemberAsBool(const char* name, bool* value) const;     \
+                                                                               \
+  /* Get an indexed member from an array as a boolean. Error if the            \
+   * index does not exist or is not a boolean.   */                            \
+  TRITONJSON_STATUSTYPE MemberAsBool(const size_t idx, bool* value) const;     \
                                                                                \
   /* Get a named member from an object as a signed integer. Error if the named \
    * member does not exist or is not a signed integer.  */                     \
-  TRITONJSON_STATUSTYPE MemberAsInt(const char* name, int64_t* value);         \
+  TRITONJSON_STATUSTYPE MemberAsInt(const char* name, int64_t* value) const;   \
                                                                                \
   /* Get an indexed member from an array as a signed integer. Error if the     \
    * index does not exist or is not a signed integer.   */                     \
-  TRITONJSON_STATUSTYPE MemberAsInt(const size_t idx, int64_t* value);         \
+  TRITONJSON_STATUSTYPE MemberAsInt(const size_t idx, int64_t* value) const;   \
                                                                                \
   /* Get a named member from an object as an unsigned integer. Error if the    \
    * named member does not exist or is not an unsigned integer.  */            \
-  TRITONJSON_STATUSTYPE MemberAsUInt(const char* name, uint64_t* value);       \
+  TRITONJSON_STATUSTYPE MemberAsUInt(const char* name, uint64_t* value) const; \
                                                                                \
   /* Get an indexed member from an array as an unsigned integer. Error if the  \
    * index does not exist or is not an unsigned integer.   */                  \
-  TRITONJSON_STATUSTYPE MemberAsUInt(const size_t idx, uint64_t* value);
+  TRITONJSON_STATUSTYPE MemberAsUInt(const size_t idx, uint64_t* value) const;
 
 #define TRITONJSON_DEFINE_COMMON_METHODS(CLS)                                  \
   TRITONJSON_STATUSTYPE CLS::Add(const char* name, TritonJson::Value& value)   \
@@ -210,7 +233,8 @@ namespace nvidia { namespace inferenceserver {
     return TRITONJSON_STATUSSUCCESS;                                           \
   }                                                                            \
                                                                                \
-  TRITONJSON_STATUSTYPE CLS::Add(const char* name, const char* value)          \
+  TRITONJSON_STATUSTYPE CLS::Add(                                              \
+      const char* name, const char* value, const size_t len)                   \
   {                                                                            \
     if (!value_.IsObject()) {                                                  \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -219,7 +243,7 @@ namespace nvidia { namespace inferenceserver {
     rapidjson::Document::AllocatorType& allocator = Allocator();               \
     value_.AddMember(                                                          \
         rapidjson::Value(rapidjson::StringRef(name)).Move(),                   \
-        rapidjson::Value(value, allocator).Move(), allocator);                 \
+        rapidjson::Value(value, len, allocator).Move(), allocator);            \
     return TRITONJSON_STATUSSUCCESS;                                           \
   }                                                                            \
                                                                                \
@@ -282,14 +306,15 @@ namespace nvidia { namespace inferenceserver {
     return TRITONJSON_STATUSSUCCESS;                                           \
   }                                                                            \
                                                                                \
-  TRITONJSON_STATUSTYPE CLS::Append(const char* value)                         \
+  TRITONJSON_STATUSTYPE CLS::Append(const char* value, const size_t len)       \
   {                                                                            \
     if (!value_.IsArray()) {                                                   \
       TRITONJSON_STATUSRETURN(                                                 \
           std::string("JSON, attempt to append to non-array"));                \
     }                                                                          \
     rapidjson::Document::AllocatorType& allocator = Allocator();               \
-    value_.PushBack(rapidjson::Value(value, allocator).Move(), allocator);     \
+    value_.PushBack(                                                           \
+        rapidjson::Value(value, len, allocator).Move(), allocator);            \
     return TRITONJSON_STATUSSUCCESS;                                           \
   }                                                                            \
                                                                                \
@@ -326,7 +351,7 @@ namespace nvidia { namespace inferenceserver {
   }
 
 #define TRITONJSON_DEFINE_COMMON_REF_METHODS(CLS)                              \
-  TRITONJSON_STATUSTYPE CLS::AssertType(TritonJson::ValueType type)            \
+  TRITONJSON_STATUSTYPE CLS::AssertType(TritonJson::ValueType type) const      \
   {                                                                            \
     if (static_cast<rapidjson::Type>(type) != value_->GetType()) {             \
       TRITONJSON_STATUSRETURN(std::string("JSON, unexpected type"));           \
@@ -334,12 +359,12 @@ namespace nvidia { namespace inferenceserver {
     return TRITONJSON_STATUSSUCCESS;                                           \
   }                                                                            \
                                                                                \
-  bool CLS::HasMember(const char* name)                                        \
+  bool CLS::HasMember(const char* name) const                                  \
   {                                                                            \
     return value_->IsObject() && value_->HasMember(name);                      \
   }                                                                            \
                                                                                \
-  size_t CLS::ArraySize()                                                      \
+  size_t CLS::ArraySize() const                                                \
   {                                                                            \
     if (!value_->IsArray()) {                                                  \
       return 0;                                                                \
@@ -347,17 +372,28 @@ namespace nvidia { namespace inferenceserver {
     return value_->GetArray().Size();                                          \
   }                                                                            \
                                                                                \
-  TRITONJSON_STATUSTYPE CLS::AsString(const char** value)                      \
+  TRITONJSON_STATUSTYPE CLS::AsString(const char** value, size_t* len) const   \
   {                                                                            \
     if (!value_->IsString()) {                                                 \
       TRITONJSON_STATUSRETURN(                                                 \
           std::string("JSON, failed accessing non-string as string"));         \
     }                                                                          \
     *value = value_->GetString();                                              \
+    *len = value_->GetStringLength();                                          \
     return TRITONJSON_STATUSSUCCESS;                                           \
   }                                                                            \
                                                                                \
-  TRITONJSON_STATUSTYPE CLS::AsInt(int64_t* value)                             \
+  TRITONJSON_STATUSTYPE CLS::AsBool(bool* value) const                         \
+  {                                                                            \
+    if (!value_->IsBool()) {                                                   \
+      TRITONJSON_STATUSRETURN(                                                 \
+          std::string("JSON, failed accessing non-boolean as a boolean"));     \
+    }                                                                          \
+    *value = value_->GetBool();                                                \
+    return TRITONJSON_STATUSSUCCESS;                                           \
+  }                                                                            \
+                                                                               \
+  TRITONJSON_STATUSTYPE CLS::AsInt(int64_t* value) const                       \
   {                                                                            \
     if (!value_->IsInt64()) {                                                  \
       TRITONJSON_STATUSRETURN(std::string(                                     \
@@ -367,7 +403,7 @@ namespace nvidia { namespace inferenceserver {
     return TRITONJSON_STATUSSUCCESS;                                           \
   }                                                                            \
                                                                                \
-  TRITONJSON_STATUSTYPE CLS::AsUInt(uint64_t* value)                           \
+  TRITONJSON_STATUSTYPE CLS::AsUInt(uint64_t* value) const                     \
   {                                                                            \
     if (!value_->IsUint64()) {                                                 \
       TRITONJSON_STATUSRETURN(std::string(                                     \
@@ -378,7 +414,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::Member(                                           \
-      const char* name, TritonJson::ValueRef* value)                           \
+      const char* name, TritonJson::ValueRef* value) const                     \
   {                                                                            \
     if (!value_->IsObject() || !value_->HasMember(name)) {                     \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -390,7 +426,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::Member(                                           \
-      const size_t idx, TritonJson::ValueRef* value)                           \
+      const size_t idx, TritonJson::ValueRef* value) const                     \
   {                                                                            \
     if (!value_->IsArray() || (idx >= value_->GetArray().Size())) {            \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -402,7 +438,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsArray(                                    \
-      const char* name, TritonJson::ValueRef* value)                           \
+      const char* name, TritonJson::ValueRef* value) const                     \
   {                                                                            \
     if (!value_->IsObject() || !value_->HasMember(name)) {                     \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -418,7 +454,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsArray(                                    \
-      const size_t idx, TritonJson::ValueRef* value)                           \
+      const size_t idx, TritonJson::ValueRef* value) const                     \
   {                                                                            \
     if (!value_->IsArray() || (idx >= value_->GetArray().Size())) {            \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -434,7 +470,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsObject(                                   \
-      const char* name, TritonJson::ValueRef* value)                           \
+      const char* name, TritonJson::ValueRef* value) const                     \
   {                                                                            \
     if (!value_->IsObject() || !value_->HasMember(name)) {                     \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -450,7 +486,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsObject(                                   \
-      const size_t idx, TritonJson::ValueRef* value)                           \
+      const size_t idx, TritonJson::ValueRef* value) const                     \
   {                                                                            \
     if (!value_->IsArray() || (idx >= value_->GetArray().Size())) {            \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -466,7 +502,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsString(                                   \
-      const char* name, const char** value)                                    \
+      const char* name, const char** value, size_t* len) const                 \
   {                                                                            \
     if (!value_->IsObject() || !value_->HasMember(name)) {                     \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -477,11 +513,29 @@ namespace nvidia { namespace inferenceserver {
       TRITONJSON_STATUSRETURN(                                                 \
           std::string("JSON, failed accessing non-string as string"));         \
     }                                                                          \
-    *value = (*value_)[name].GetString();                                      \
+    auto& v = (*value_)[name];                                                 \
+    *value = v.GetString();                                                    \
+    *len = v.GetStringLength();                                                \
+    return TRITONJSON_STATUSSUCCESS;                                           \
+  }                                                                            \
+                                                                               \
+  TRITONJSON_STATUSTYPE CLS::MemberAsBool(const char* name, bool* value) const \
+  {                                                                            \
+    if (!value_->IsObject() || !value_->HasMember(name)) {                     \
+      TRITONJSON_STATUSRETURN(                                                 \
+          std::string("JSON, failed attempt to access object member '") +      \
+          name + "'");                                                         \
+    }                                                                          \
+    if (!(*value_)[name].IsBool()) {                                           \
+      TRITONJSON_STATUSRETURN(                                                 \
+          std::string("JSON, failed accessing non-boolean as a boolean"));     \
+    }                                                                          \
+    *value = (*value_)[name].GetBool();                                        \
     return TRITONJSON_STATUSSUCCESS;                                           \
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsInt(const char* name, int64_t* value)     \
+      const                                                                    \
   {                                                                            \
     if (!value_->IsObject() || !value_->HasMember(name)) {                     \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -497,6 +551,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsUInt(const char* name, uint64_t* value)   \
+      const                                                                    \
   {                                                                            \
     if (!value_->IsObject() || !value_->HasMember(name)) {                     \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -512,7 +567,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsString(                                   \
-      const size_t idx, const char** value)                                    \
+      const size_t idx, const char** value, size_t* len) const                 \
   {                                                                            \
     if (!value_->IsArray() || (idx >= value_->GetArray().Size())) {            \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -523,11 +578,29 @@ namespace nvidia { namespace inferenceserver {
       TRITONJSON_STATUSRETURN(                                                 \
           std::string("JSON, failed accessing non-string as string"));         \
     }                                                                          \
-    *value = (*value_)[idx].GetString();                                       \
+    auto& v = (*value_)[idx];                                                  \
+    *value = v.GetString();                                                    \
+    *len = v.GetStringLength();                                                \
+    return TRITONJSON_STATUSSUCCESS;                                           \
+  }                                                                            \
+                                                                               \
+  TRITONJSON_STATUSTYPE CLS::MemberAsBool(const size_t idx, bool* value) const \
+  {                                                                            \
+    if (!value_->IsArray() || (idx >= value_->GetArray().Size())) {            \
+      TRITONJSON_STATUSRETURN(                                                 \
+          std::string("JSON, failed attempt to access array index '") +        \
+          std::to_string(idx) + "'");                                          \
+    }                                                                          \
+    if (!(*value_)[idx].IsBool()) {                                            \
+      TRITONJSON_STATUSRETURN(                                                 \
+          std::string("JSON, failed accessing non-boolean as a boolean"));     \
+    }                                                                          \
+    *value = (*value_)[idx].GetBool();                                         \
     return TRITONJSON_STATUSSUCCESS;                                           \
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsInt(const size_t idx, int64_t* value)     \
+      const                                                                    \
   {                                                                            \
     if (!value_->IsArray() || (idx >= value_->GetArray().Size())) {            \
       TRITONJSON_STATUSRETURN(                                                 \
@@ -543,6 +616,7 @@ namespace nvidia { namespace inferenceserver {
   }                                                                            \
                                                                                \
   TRITONJSON_STATUSTYPE CLS::MemberAsUInt(const size_t idx, uint64_t* value)   \
+      const                                                                    \
   {                                                                            \
     if (!value_->IsArray() || (idx >= value_->GetArray().Size())) {            \
       TRITONJSON_STATUSRETURN(                                                 \
